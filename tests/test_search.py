@@ -22,7 +22,7 @@ def write_csv(path, columns, rows):
         writer.writerows(rows)
 
 
-def processed_fixture(tmp_path, *, hours=None, closures=None):
+def processed_fixture(tmp_path, *, hours=None, closures=None, latitude="35.0", longitude="139.0"):
     processed = tmp_path / "processed"
     facilities = [{
         "facility_id": "00001",
@@ -32,8 +32,8 @@ def processed_fixture(tmp_path, *, hours=None, closures=None):
         "ward": "川崎区",
         "prefecture_code": "14",
         "municipality_code": "131",
-        "latitude": "35.0",
-        "longitude": "139.0",
+        "latitude": latitude,
+        "longitude": longitude,
         "data_as_of": "2026-06-01",
     }]
     write_csv(processed / "facilities.csv", FACILITY_COLUMNS, facilities)
@@ -64,6 +64,32 @@ def test_normal_search_returns_expected_facility(tmp_path):
     assert results[0]["facility_id"] == "00001"
     assert results[0]["specialty_name"] == "内科"
     assert results[0]["data_as_of"] == "2026-06-01"
+    assert results[0]["latitude"] == "35.0"
+    assert results[0]["longitude"] == "139.0"
+
+
+def test_invalid_coordinates_do_not_remove_facility_from_search_results(tmp_path):
+    index = load_search_index(processed_fixture(tmp_path, latitude="not-a-number", longitude="181"))
+    results = run_search(index)
+    assert len(results) == 1
+    assert results[0]["facility_id"] == "00001"
+    assert results[0]["latitude"] == "not-a-number"
+    assert results[0]["longitude"] == "181"
+
+
+def test_facilities_at_the_same_coordinates_both_remain_in_search_results(tmp_path):
+    processed = processed_fixture(tmp_path)
+    with (processed / "facilities.csv").open(encoding="utf-8", newline="") as stream:
+        facilities = list(csv.DictReader(stream))
+    facilities.append({**facilities[0], "facility_id": "00002", "name": "同座標施設"})
+    write_csv(processed / "facilities.csv", FACILITY_COLUMNS, facilities)
+    with (processed / "consultation_hours.csv").open(encoding="utf-8", newline="") as stream:
+        hours = list(csv.DictReader(stream))
+    hours.append({**hours[0], "facility_id": "00002"})
+    write_csv(processed / "consultation_hours.csv", HOURS_COLUMNS, hours)
+
+    results = run_search(load_search_index(processed))
+    assert {result["facility_id"] for result in results} == {"00001", "00002"}
 
 
 def test_start_is_inclusive(tmp_path):

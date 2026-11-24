@@ -10,6 +10,7 @@ from pathlib import Path
 import streamlit as st
 
 from medical_hours_navi import DATA_AS_OF
+from medical_hours_navi.maps import google_maps_html, map_locations, maps_settings
 from medical_hours_navi.preprocessing import DAYS, WARD_NAMES
 from medical_hours_navi.search import load_search_index, search
 
@@ -161,10 +162,29 @@ if submitted:
     else:
         st.divider()
         st.subheader("検索結果")
-        st.write(f"**{len(results)}施設**　{ward}・{DAY_LABELS[weekday]}・{query_time}・{specialty_label(specialty_code, specialties)}")
+        st.write(f"**{len(results)}施設** {ward}・{DAY_LABELS[weekday]}・{query_time}・{specialty_label(specialty_code, specialties)}")
         if not results:
             st.info("条件に一致する登録診療時間は見つかりませんでした。地域・曜日・時刻・診療科を変更して再検索してください。")
         else:
+            locations = map_locations(results)
+            st.markdown(f"**地図に表示できる施設: {len(locations)} / {len(results)}施設**")
+            if locations:
+                try:
+                    maps_api_key, maps_map_id = maps_settings(st.secrets)
+                except Exception:
+                    maps_api_key = maps_map_id = ""
+                if maps_api_key and maps_map_id:
+                    st.html(
+                        google_maps_html(locations, maps_api_key, maps_map_id),
+                        unsafe_allow_javascript=True,
+                    )
+                else:
+                    st.info(
+                        "地図を使うには`.streamlit/secrets.toml`に"
+                        "`GOOGLE_MAPS_API_KEY`と`GOOGLE_MAP_ID`を設定してください。"
+                    )
+            else:
+                st.caption("有効な座標を持つ施設がないため、地図マーカーは表示できません。")
             for result in results:
                 render_result(result)
 
